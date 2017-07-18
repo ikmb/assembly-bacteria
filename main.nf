@@ -78,10 +78,10 @@ process runSpades {
   set id,file(fw),file(rev) from trimmed_reads
 
   output:
-  set id,file(assembly_fa) into inputProkka,inputBwaIndex
+  set id,file(assembly_fa) into inputProkka,inputAssemblyBwa,inputAssemblyMetrics
 
   script:
-  assembly_fa = "${id}/scaffolds.fasta"
+  assembly_fa = "spades/scaffolds.fasta"
 
   """
 	$SPADES -1 $fw -2 $rev -t 16 -m 120 -o spades
@@ -99,39 +99,21 @@ process runProkka {
 
 	output:
 	set id,file(annotation_gff),file(annotation_gbk) into ProkkaAnnotation
-	file("*.txt") into ProkkaStats
+	file(annotation_stats) into ProkkaStats
 
 	script:
-	annotation_gff = id + "/" + id + ".gff"
-	annotation_gbk = id + "/" + id + ".gbk"
+	annotation_gff = "prokka/" + id + ".gff"
+	annotation_gbk = "prokka/" + id + ".gbk"
+	annotation_stats = "prokka/" + id + ".txt"
 
 	"""
-		$PROKKA --outdir ${id} --prefix ${id} --addgenes --locustag ${id} --mincontiglen 200 --centre ${CENTRE} --cpus 16
+		$PROKKA --outdir prokka --prefix ${id} --addgenes --locustag ${id} --mincontiglen 200 --centre ${CENTRE} --strain ${id} --cpus 16 $assembly_fa
 	"""
 
 }
 
-process runBwaIndex {
 
-	tag "${id}"
-        publishDir "${OUTDIR}/${id}/BwaIdx", mode: 'copy'
-
-        input:
-        set id,file(assembly) from inputBwaIndex
-
-        output:
-	set id,file(assembly) into outputBwaIndex
-
-	script:
-	index_base = id + ".scaffolds.fasta"
-
-	"""
-		$BWA index $assembly
-	"""
-
-}
-
-mergeAssemblyAndReads_by_id = outputBwaIndex.combine(inputReadsBwa, by: 0)
+mergeAssemblyAndReads_by_id = inputAssemblyBwa.combine(inputReadsBwa, by: 0)
 
 process runBwa {
 
@@ -139,7 +121,7 @@ process runBwa {
         publishDir "${OUTDIR}/${id}/BAM", mode: 'copy'
 
         input:
-        set id,file(assembly_index),file(left),file(right) from mergeAssemblyAndReads_by_id
+        set id,file(assembly),file(left),file(right) from mergeAssemblyAndReads_by_id
 
         output:
         set id,file(bam) into outputBwa
@@ -148,7 +130,7 @@ process runBwa {
 	bam = id + ".bam"
 
 	"""
-		$BWA mem -M -t 8 ${assembly_index} $left $right | $SAMTOOLS sort - > $bam
+		$BWA index $assembly && $BWA mem -M -t 8 ${assembly} $left $right | $SAMTOOLS sort - > $bam
 	"""
 
 }
@@ -162,7 +144,7 @@ process runMarkDuplicates {
     set id,file(bam) from outputBwa
     
     output:
-    set id,file(outfile_bam),file(outfile_bai) into outputMarkDuplicates
+    set id,file(outfile_bam),file(outfile_bai) into outputMarkDuplicates,inputRunCollectMultipleMetrics
     file(outfile_metrics) into runMarkDuplicatesOutput_QC
     
     script:
@@ -182,31 +164,92 @@ process runMarkDuplicates {
 	"""  
 }
 
+combinedBamAndAssembly = inputRunCollectMultipleMetrics.combine(inputAssemblyMetrics, by: 0)
 
-process runMultiQC {
+process runCollectMultipleMetrics {
 
-    tag "${prefix}"
+    tag "${id}"
+    publishDir "${OUTDIR}/${id}/Picard_Metrics", mode: 'copy'
+ 	    
+    input:
+    set id, file(bam), file(bai),file(assembly) from combinedBamAndAssembly
+
+    output:
+    file("${id}*") into CollectMultipleMetricsOutput mode flatten
+
+    script:       
+
+    """
+        java -XX:ParallelGCThreads=1 -Xmx5g -Djava.io.tmpdir=tmp/ -jar $PICARD CreateSequenceDictionary \
+		R=$assembly \
+		O=scaffolds.dict \
+	&& \
+	java -XX:ParallelGCThreads=1 -Xmx5g -Djava.io.tmpdir=tmp/ -jar $PICARD CollectMultipleMetrics \
+		PROGRAM=MeanQualityByCycle \
+		PROGRAM=QualityScoreDistribution \
+		PROGRAM=CollectAlignmentSummaryMetrics \
+		PROGRAM=CollectInsertSizeMetrics\
+		PROGRAM=CollectWgsMetrics \
+		PROGRAM=CollectGcBiasMetrics \
+		PROGRAM=CollectBaseDistributionByCycle \
+		INPUT=${bam} \
+		REFERENCE_SEQUENCE=scaffolds.fasta \
+		ASSUME_SORTED=true \
+		QUIET=true \
+		OUTPUT=${id} \
+		TMP_DIR=tmp
+	"""
+}	
+
+
+process runMultiQCSample {
+
+    tag "ALL"
+    publishDir "${OUTDIR}/MultiQC", mode: 'copy'
+
+    input:
+  //  file (fastqc:'fastqc/*') from trimgalore_fastqc_reports.collect()
+ //   file ('trimgalore/*') from trimgalore_results.collect()
+    file (dedup_metrics) from runMarkDuplicatesOutput_QC.collect()
+    file (prokka_stats) from ProkkaStats.collect()
+    file('*') from CollectMultipleMetricsOutput.flatten().toList()
+
+
+
+    output:
+    file "*sample_multiqc.html" into multiqc_report
+    file "*multiqc_data"
+    // val prefix into multiqc_prefix
+
+    script:
+    //prefix = fastqc[0].toString() - '_fastqc.html' - 'fastqc/'
+    """
+    multiqc -n sample_multiqc -f . 2>&1
+    """
+
+
+
+
+}
+
+process runMultiQCLibrary {
+
+    tag "ALL"
     publishDir "${OUTDIR}/MultiQC", mode: 'copy'
 
     input:
     file (fastqc:'fastqc/*') from trimgalore_fastqc_reports.collect()
     file ('trimgalore/*') from trimgalore_results.collect()
-    file (dedup_metrics) from runMarkDuplicatesOutput_QC.collect()
-    file (prokka_stats) from ProkkaStats.collect()
 
     output:
-    file "*multiqc_report.html" into multiqc_report
-    file "*multiqc_data"
-    val prefix into multiqc_prefix
+    file "*library_multiqc.html" into multiqc_library_report
 
     script:
-    prefix = fastqc[0].toString() - '_fastqc.html' - 'fastqc/'
+    
     """
-    multiqc -f . 2>&1
-    """
-
-
-
+      cp $baseDir/config/multiqc.yaml multiqc_config.yaml
+      multiqc -n library_multiqc -f . 2>&1
+    """	
 
 }
 
