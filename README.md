@@ -12,7 +12,7 @@ The pipeline is currently configured to run on RZCluster. Other execute environm
 
 To run the pipeline, you first have to clone the repository from git: 
 
-`git clone git@git.ikmb.uni-kiel.de:genomes/genomes-bacteria.git`
+`git clone git@git.ikmb.uni-kiel.de:bfx-core/NF-genomes-bacteria.git`
 
 If you already have a local copy, make sure it is up-to-date:
 
