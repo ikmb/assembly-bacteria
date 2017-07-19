@@ -189,7 +189,6 @@ process runCollectMultipleMetrics {
 		PROGRAM=QualityScoreDistribution \
 		PROGRAM=CollectAlignmentSummaryMetrics \
 		PROGRAM=CollectInsertSizeMetrics\
-		PROGRAM=CollectWgsMetrics \
 		PROGRAM=CollectGcBiasMetrics \
 		PROGRAM=CollectBaseDistributionByCycle \
 		INPUT=${bam} \
