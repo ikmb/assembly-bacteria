@@ -16,7 +16,7 @@ SAMTOOLS=file(params.samtools)
 
 TRIMGALORE=file(params.trimgalore)
 
-FOLDER=params.folder
+inputFile=file(params.samples)
 
 params.saveTrimmed = true
 
@@ -25,7 +25,7 @@ params.saveTrimmed = true
 
 logParams(params, "nextflow_parameters.txt")
 
-VERSION = "1.0" 
+VERSION = "2.0" 
 // Header log info 
 
 log.info "=========================================" 
@@ -37,14 +37,13 @@ log.info "========================================="
 
 // Starting the workflow
 
-Channel
-.fromFilePairs(FOLDER + "/*_R{1,2}_001.fastq.gz")
-.ifEmpty { exit 1, "Could not find any matching input files" }
-.into { inputTrimgalore }
+Channel.from(inputFile)
+       .splitCsv(sep: ';', header: true)
+       .into {  inputTrimgalore }
 
 process runTrimgalore {
 
-   tag "${id}"
+   tag "${sampleID}|#{libraryID}"
    publishDir "${OUTDIR}/trimgalore", mode: 'copy',
         saveAs: {filename ->
             if (filename.indexOf("_fastqc") > 0) "FastQC/$filename"
@@ -53,10 +52,10 @@ process runTrimgalore {
         }
 
    input:
-   set val(id),file(reads) from inputTrimgalore
+   set sampleID,libraryID,file(forward),file(reverse) from inputTrimgalore
 
    output:
-   set id,file("*val_1.fq.gz"),file("*val_2.fq.gz") into trimmed_reads, inputReadsBwa 
+   set sampleID,libraryID,file("*val_1.fq.gz"),file("*val_2.fq.gz") into trimmed_reads, inputReadsBwa 
    file "*trimming_report.txt" into trimgalore_results   
    file "*_fastqc.{zip,html}" into trimgalore_fastqc_reports
 
@@ -65,20 +64,20 @@ process runTrimgalore {
    trim_option = '--paired'
 
    """
-	$TRIMGALORE --gzip $trim_option --fastqc --length 75  $reads
+	$TRIMGALORE --gzip $trim_option --fastqc --length 75  $forward $reverse
    """	
 }
 
 process runSpades {
 
-  tag "${id}"
-  publishDir "${OUTDIR}/${id}/assembly", mode: 'copy'
+  tag "${sampleID}|#{libraryID}"
+  publishDir "${OUTDIR}/${sampleID}/assembly", mode: 'copy'
   
   input:
-  set id,file(fw),file(rev) from trimmed_reads
+  set sampleID,libraryID,file(fw),file(rev) from trimmed_reads
 
   output:
-  set id,file(assembly_fa) into inputProkka,inputAssemblyBwa,inputAssemblyMetrics
+  set sampleID,file(assembly_fa) into inputProkka,inputAssemblyBwa,inputAssemblyMetrics
 
   script:
   assembly_fa = "spades/scaffolds.fasta"
@@ -91,23 +90,23 @@ process runSpades {
 
 process runProkka {
 	
-	tag "${id}"
-	publishDir "${OUTDIR}/${id}/annotation", mode: 'copy'
+	tag "${sampleID}"
+	publishDir "${OUTDIR}/${sampleID}/annotation", mode: 'copy'
 
 	input:
-	set id,file(assembly_fa) from inputProkka
+	set sampleID,file(assembly_fa) from inputProkka
 
 	output:
-	set id,file(annotation_gff),file(annotation_gbk) into ProkkaAnnotation
+	set sampleID,file(annotation_gff),file(annotation_gbk) into ProkkaAnnotation
 	file(annotation_stats) into ProkkaStats
 
 	script:
-	annotation_gff = "prokka/" + id + ".gff"
-	annotation_gbk = "prokka/" + id + ".gbk"
-	annotation_stats = "prokka/" + id + ".txt"
+	annotation_gff = "prokka/" + sampleID + ".gff"
+	annotation_gbk = "prokka/" + sampleID + ".gbk"
+	annotation_stats = "prokka/" + sampleID + ".txt"
 
 	"""
-		$PROKKA --outdir prokka --prefix ${id} --addgenes --locustag ${id} --mincontiglen 200 --centre ${CENTRE} --strain ${id} --cpus 16 $assembly_fa
+		$PROKKA --outdir prokka --prefix ${sampleID} --addgenes --locustag ${sampleID} --mincontiglen 200 --centre ${CENTRE} --strain ${sampleID} --cpus 16 $assembly_fa
 	"""
 
 }
@@ -117,17 +116,17 @@ mergeAssemblyAndReads_by_id = inputAssemblyBwa.combine(inputReadsBwa, by: 0)
 
 process runBwa {
 
-	tag "${id}"
-        publishDir "${OUTDIR}/${id}/BAM", mode: 'copy'
+	tag "${sampleID}"
+        publishDir "${OUTDIR}/${sampleID}/BAM", mode: 'copy'
 
         input:
-        set id,file(assembly),file(left),file(right) from mergeAssemblyAndReads_by_id
+        set sampleID,file(assembly),file(left),file(right) from mergeAssemblyAndReads_by_id
 
         output:
-        set id,file(bam) into outputBwa
+        set sampleID,file(bam) into outputBwa
 
 	script:
-	bam = id + ".bam"
+	bam = sampleID + ".bam"
 
 	"""
 		$BWA index $assembly && $BWA mem -M -t 8 ${assembly} $left $right | $SAMTOOLS sort - > $bam
@@ -137,21 +136,21 @@ process runBwa {
 
 process runMarkDuplicates {
 
-    tag "${id}"
-    publishDir "${OUTDIR}/${id}/MarkDuplicates", mode: 'copy'
+    tag "${sampleID}"
+    publishDir "${OUTDIR}/${sampleID}/MarkDuplicates", mode: 'copy'
 
     input:
-    set id,file(bam) from outputBwa
+    set sampleID,file(bam) from outputBwa
     
     output:
-    set id,file(outfile_bam),file(outfile_bai) into outputMarkDuplicates,inputRunCollectMultipleMetrics
+    set sampleID,file(outfile_bam),file(outfile_bai) into outputMarkDuplicates,inputRunCollectMultipleMetrics
     file(outfile_metrics) into runMarkDuplicatesOutput_QC
     
     script:
-    outfile_bam = id + ".dedup.bam"
-    outfile_bai = id + ".dedup.bai"
+    outfile_bam = sampleID + ".dedup.bam"
+    outfile_bai = sampleID + ".dedup.bai"
 
-    outfile_metrics = id + "_duplicate_metrics.txt"	
+    outfile_metrics = sampleID + "_duplicate_metrics.txt"	
 	        
     """
     
@@ -168,14 +167,14 @@ combinedBamAndAssembly = inputRunCollectMultipleMetrics.combine(inputAssemblyMet
 
 process runCollectMultipleMetrics {
 
-    tag "${id}"
-    publishDir "${OUTDIR}/${id}/Picard_Metrics", mode: 'copy'
+    tag "${sampleID}"
+    publishDir "${OUTDIR}/${sampleID}/Picard_Metrics", mode: 'copy'
  	    
     input:
-    set id, file(bam), file(bai),file(assembly) from combinedBamAndAssembly
+    set sampleID, file(bam), file(bai),file(assembly) from combinedBamAndAssembly
 
     output:
-    file("${id}*") into CollectMultipleMetricsOutput mode flatten
+    file("${sampleID}*") into CollectMultipleMetricsOutput mode flatten
 
     script:       
 
@@ -195,7 +194,7 @@ process runCollectMultipleMetrics {
 		REFERENCE_SEQUENCE=scaffolds.fasta \
 		ASSUME_SORTED=true \
 		QUIET=true \
-		OUTPUT=${id} \
+		OUTPUT=${sampleID} \
 		TMP_DIR=tmp
 	"""
 }	
