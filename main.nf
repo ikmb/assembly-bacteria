@@ -43,7 +43,7 @@ Channel.from(inputFile)
 
 process runTrimgalore {
 
-   tag "${sampleID}|#{libraryID}"
+   tag "${sampleID}|${libraryID}"
    publishDir "${OUTDIR}/trimgalore", mode: 'copy',
         saveAs: {filename ->
             if (filename.indexOf("_fastqc") > 0) "FastQC/$filename"
@@ -52,7 +52,7 @@ process runTrimgalore {
         }
 
    input:
-   set sampleID,libraryID,file(forward),file(reverse) from inputTrimgalore
+   set sampleID,libraryID,forward,reverse from inputTrimgalore
 
    output:
    set sampleID,libraryID,file("*val_1.fq.gz"),file("*val_2.fq.gz") into trimmed_reads, inputReadsBwa 
