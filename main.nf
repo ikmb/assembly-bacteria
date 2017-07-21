@@ -120,7 +120,7 @@ process runBwa {
         publishDir "${OUTDIR}/${sampleID}/BAM", mode: 'copy'
 
         input:
-        set sampleID,file(assembly),file(left),file(right) from mergeAssemblyAndReads_by_id
+        set sampleID,file(assembly),libraryID,file(left),file(right) from mergeAssemblyAndReads_by_id
 
         output:
         set sampleID,file(bam) into outputBwa
