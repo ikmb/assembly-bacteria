@@ -1,3 +1,4 @@
+![](images/ikmb_bfx_logo.png)
 # IKMB Genomes - Bacterial assembly and annotation from PE reads
 
 ## Overview
