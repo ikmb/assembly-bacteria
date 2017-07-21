@@ -1,0 +1,4 @@
+SampleID;LibraryID;R1;R2
+Sample-B1;G07034;/home/sukmb352/projects/pipelines/assembly_bacteria/data/G07034-L1_S1_L001_R1_001.fastq.gz;/home/sukmb352/projects/pipelines/assembly_bacteria/data/G07034-L1_S1_L001_R2_001.fastq.gz
+Sample-B2;G07035;/home/sukmb352/projects/pipelines/assembly_bacteria/data/G07035-L1_S2_L001_R1_001.fastq.gz;/home/sukmb352/projects/pipelines/assembly_bacteria/data/G07035-L1_S2_L001_R2_001.fastq.gz
+Sample-B3;G07036;/home/sukmb352/projects/pipelines/assembly_bacteria/data/G07036-L1_S3_L001_R1_001.fastq.gz;/home/sukmb352/projects/pipelines/assembly_bacteria/data/G07036-L1_S3_L001_R2_001.fastq.gz

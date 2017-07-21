@@ -28,11 +28,16 @@ Next, move to the folder where the pipeline will be run from:
 
 `cd /path/to/run_folder`
 
-Finally, run the pipeline:
+Finally, run the pipeline by providing a path to the sample info:
 
-`nextflow -c /path/to/nextflow.config run /path/to/main.nf --folder /path/to/reads`
+`nextflow -c /path/to/nextflow.config run /path/to/main.nf --samples Samples.csv`
 
-Where "path/to/reads" points to the folder in which the PE files are located. 
+The file Samples is a CSV formatted list of data sets to process. An example format is included in the template subfolder. Required information include:
+
+* Sample name
+* Library name
+* Path to forward read
+* path to reverse read
 
 ## Outputs
 

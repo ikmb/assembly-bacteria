@@ -215,14 +215,14 @@ process runMultiQCSample {
 
 
     output:
-    file "*sample_multiqc.html" into multiqc_report
+    file "*assembly_multiqc.html" into multiqc_report
     file "*multiqc_data"
     // val prefix into multiqc_prefix
 
     script:
     //prefix = fastqc[0].toString() - '_fastqc.html' - 'fastqc/'
     """
-    multiqc -n sample_multiqc -f . 2>&1
+    multiqc -n assembly_multiqc -f . 2>&1
     """
 
 
