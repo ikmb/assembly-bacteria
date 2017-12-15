@@ -39,7 +39,7 @@ log.info "========================================="
 
 Channel.from(inputFile)
        .splitCsv(sep: ';', header: true)
-       .into {  inputTrimgalore }
+       .set {  inputReads }
 
 process runTrimgalore {
 
@@ -52,7 +52,7 @@ process runTrimgalore {
         }
 
    input:
-   set sampleID,libraryID,forward,reverse from inputTrimgalore
+   set sampleID,libraryID,forward,reverse from inputReads
 
    output:
    set sampleID,libraryID,file("*val_1.fq.gz"),file("*val_2.fq.gz") into trimmed_reads, inputReadsBwa 
@@ -70,7 +70,7 @@ process runTrimgalore {
 
 process runSpades {
 
-  tag "${sampleID}|#{libraryID}"
+  tag "${sampleID}|${libraryID}"
   publishDir "${OUTDIR}/${sampleID}/assembly", mode: 'copy'
   
   input:
