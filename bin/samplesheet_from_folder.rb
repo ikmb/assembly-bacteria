@@ -45,7 +45,7 @@ fastq_files = Dir["#{options.folder}/*_R*.fastq.gz"]
 
 groups = fastq_files.group_by{|f| f.split("/")[-1].split(/_R[1,2]/)[0] }
 
-puts "SampleID;libraryID;Date;R1;R2"
+puts "SampleID;libraryID;R1;R2"
 
 #G00076-L2_S19_L003_R1_001.fastq.gz
 

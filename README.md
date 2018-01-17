@@ -33,12 +33,18 @@ Finally, run the pipeline by providing a path to the sample info:
 
 `nextflow -c /path/to/nextflow.config run /path/to/main.nf --samples Samples.csv`
 
+## Sample file
+
 The file Samples is a CSV formatted list of data sets to process. An example format is included in the template subfolder. Required information include:
 
 * Sample name
 * Library name
 * Path to forward read
 * path to reverse read
+
+## Resfinder
+
+The Pipeline can optionally run the Resfinder program to detect the presence of typical resistance-confering genes. To enable the resfinder search, use the `--resfinder`flag. 
 
 ## Outputs
 

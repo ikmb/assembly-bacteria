@@ -16,10 +16,31 @@ SAMTOOLS=file(params.samtools)
 
 TRIMGALORE=file(params.trimgalore)
 
+RESFINDER_DB=file(params.resfinder_db)
+
 inputFile=file(params.samples)
 
 params.saveTrimmed = true
 
+params.resfinder = false
+
+params.coverage = false
+
+resistances = [ ]
+
+RESFINDER_CONFIG = RESFINDER_DB + "/config"
+
+file(RESFINDER_CONFIG).eachLine { line ->
+	if (line =~ /^#.*/ ) {
+
+	} else {
+		elements = line.trim().split("\t")
+		db = elements[0]
+		if ( db.length() > 0 ) {
+			resistances << db
+		}
+	}
+}
 
 // Logging and reporting
 
@@ -30,16 +51,42 @@ VERSION = "2.0"
 
 log.info "=========================================" 
 log.info "IKMB pipeline version v${VERSION}" 
-log.info "Nextflow Version: $workflow.nextflow.version" 
-log.info "Command Line: $workflow.commandLine" 
+log.info "Nextflow Version: 	$workflow.nextflow.version" 
+log.info "Command Line: 	$workflow.commandLine" 
+log.info "Running Resfinder:	${params.resfinder}"
+log.info "Resfinder DB:		${RESFINDER_DB}"
+log.info "Resfinder Config: 	${RESFINDER_CONFIG}"
 log.info "=========================================" 
 
 
 // Starting the workflow
 
-Channel.from(inputFile)
-       .splitCsv(sep: ';', header: true)
-       .set {  inputReads }
+Channel.fromPath(inputFile)
+	.splitCsv(sep: ';', skip:1 )
+	.map { sampleID, libraryID, R1, R2 -> [ libraryID, sampleID, file(R1), file(R2) ] }
+	.groupTuple(by: [0,1])
+       	.set { inputReads }
+
+process Merge {
+
+	tag "${libraryID}"
+        publishDir("${OUTDIR}/Data/${libraryID}")
+
+        input:
+	set libraryID,sampleID,forward_reads,reverse_reads from inputReads
+
+        output:
+        set sampleID,libraryID,file(left_merged),file(right_merged) into inputTrimgalore
+
+        script:
+        left_merged = libraryID + "_R1.fastq.gz"
+        right_merged = libraryID + "_R2.fastq.gz"
+
+        """
+                zcat ${forward_reads.join(" ")} | gzip > $left_merged
+		zcat ${reverse_reads.join(" ")} | gzip > $right_merged
+        """
+}
 
 process runTrimgalore {
 
@@ -52,7 +99,7 @@ process runTrimgalore {
         }
 
    input:
-   set sampleID,libraryID,forward,reverse from inputReads
+   set sampleID,libraryID,file(forward),file(reverse) from inputTrimgalore
 
    output:
    set sampleID,libraryID,file("*val_1.fq.gz"),file("*val_2.fq.gz") into trimmed_reads, inputReadsBwa 
@@ -97,20 +144,45 @@ process runProkka {
 	set sampleID,file(assembly_fa) from inputProkka
 
 	output:
-	set sampleID,file(annotation_gff),file(annotation_gbk) into ProkkaAnnotation
-	file(annotation_stats) into ProkkaStats
+	file("prokka/*") into ProkkaAnnotation
+	file(annotation_gff) into ProkkaGFF
+	file("prokka/*") into ProkkaStats
+	set val(sampleID),file(annotation_fsa) into ProkkaFSA
 
 	script:
 	annotation_gff = "prokka/" + sampleID + ".gff"
 	annotation_gbk = "prokka/" + sampleID + ".gbk"
 	annotation_stats = "prokka/" + sampleID + ".txt"
+	annotation_fsa	= "prokka/" + sampleID + ".fsa"
 
 	"""
-		$PROKKA --outdir prokka --prefix ${sampleID} --addgenes --locustag ${sampleID} --mincontiglen 200 --centre ${CENTRE} --strain ${sampleID} --cpus 16 $assembly_fa
+		$PROKKA --outdir prokka --prefix ${sampleID} --addgenes --locustag ${sampleID} --mincontiglen 200 --centre ${CENTRE} --strain ${sampleID} --cpus 16 $assembly_fa 
 	"""
 
 }
 
+process runResfinder {
+
+	tag "${sampleID}|${resistance}"
+        publishDir "${OUTDIR}/${sampleID}/Resfinder", mode: 'copy'
+
+	input:
+	set sampleID,file(assembly) from ProkkaFSA
+	each resistance from resistances
+	
+	output:
+	file("resfinder_${resistance}/*") into resultsResfinder
+
+	//when:
+	//params.resfinder
+
+	script:
+	outfolder = "resfinder_${resistance}"
+
+	"""	
+		perl /ifs/data/nfs_share/ikmb_repository/software/resfinder/current/resfinder.pl -d $RESFINDER_DB -a $resistance -i $assembly -o $outfolder -k 90 -l 0.60
+	"""
+}
 
 mergeAssemblyAndReads_by_id = inputAssemblyBwa.combine(inputReadsBwa, by: 0)
 
@@ -124,6 +196,9 @@ process runBwa {
 
         output:
         set sampleID,file(bam) into outputBwa
+
+	when:
+	params.coverage
 
 	script:
 	bam = sampleID + ".bam"
@@ -209,7 +284,7 @@ process runMultiQCSample {
   //  file (fastqc:'fastqc/*') from trimgalore_fastqc_reports.collect()
  //   file ('trimgalore/*') from trimgalore_results.collect()
     file (dedup_metrics) from runMarkDuplicatesOutput_QC.collect()
-    file (prokka_stats) from ProkkaStats.collect()
+    file ('prokka/*') from ProkkaStats.collect()
     file('*') from CollectMultipleMetricsOutput.flatten().toList()
 
 
