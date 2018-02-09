@@ -1,5 +1,18 @@
 // Pipeline variables
 
+nf_required_version = '0.25.5'
+try {
+    if( ! nextflow.version.matches(">= $nf_required_version") ){
+        throw GroovyException('Nextflow version too old')
+    }
+} catch (all) {
+    log.error "====================================================\n" +
+              "  Nextflow version $nf_required_version required! You are running v$workflow.nextflow.version.\n" +
+              "  Pipeline execution will continue, but things may break.\n" +
+              "  Please run `nextflow self-update` to update Nextflow.\n" +
+              "============================================================"
+}
+
 CENTRE = params.centre
 
 PROKKA = file(params.prokka)
@@ -17,6 +30,8 @@ SAMTOOLS=file(params.samtools)
 TRIMGALORE=file(params.trimgalore)
 
 RESFINDER_DB=file(params.resfinder_db)
+
+REFERENCE=file(params.reference)
 
 inputFile=file(params.samples)
 
@@ -65,7 +80,7 @@ Channel.fromPath(inputFile)
 	.splitCsv(sep: ';', skip:1 )
 	.map { sampleID, libraryID, R1, R2 -> [ libraryID, sampleID, file(R1), file(R2) ] }
 	.groupTuple(by: [0,1])
-       	.set { inputReads }
+       	.set { inputMerge }
 
 process Merge {
 
@@ -73,7 +88,7 @@ process Merge {
         publishDir("${OUTDIR}/Data/${libraryID}")
 
         input:
-	set libraryID,sampleID,forward_reads,reverse_reads from inputReads
+	set libraryID,sampleID,forward_reads,reverse_reads from inputMerge
 
         output:
         set sampleID,libraryID,file(left_merged),file(right_merged) into inputTrimgalore
@@ -102,7 +117,7 @@ process runTrimgalore {
    set sampleID,libraryID,file(forward),file(reverse) from inputTrimgalore
 
    output:
-   set sampleID,libraryID,file("*val_1.fq.gz"),file("*val_2.fq.gz") into trimmed_reads, inputReadsBwa 
+   set sampleID,libraryID,file("*val_1.fq.gz"),file("*val_2.fq.gz") into trimmed_reads, inputBwa 
    file "*trimming_report.txt" into trimgalore_results   
    file "*_fastqc.{zip,html}" into trimgalore_fastqc_reports
 
@@ -124,13 +139,13 @@ process runSpades {
   set sampleID,libraryID,file(fw),file(rev) from trimmed_reads
 
   output:
-  set sampleID,file(assembly_fa) into inputProkka,inputAssemblyBwa,inputAssemblyMetrics
+  set sampleID,file(assembly_fa) into inputProkka,inputAssemblyMetrics
 
   script:
   assembly_fa = "spades/scaffolds.fasta"
 
   """
-	$SPADES -1 $fw -2 $rev -t 16 -m 120 -o spades
+	$SPADES -1 $fw -2 $rev -t ${task.cpus} -m 120 -o spades
   """
 
 }
@@ -184,15 +199,13 @@ process runResfinder {
 	"""
 }
 
-mergeAssemblyAndReads_by_id = inputAssemblyBwa.combine(inputReadsBwa, by: 0)
-
 process runBwa {
 
 	tag "${sampleID}"
         publishDir "${OUTDIR}/${sampleID}/BAM", mode: 'copy'
 
         input:
-        set sampleID,file(assembly),libraryID,file(left),file(right) from mergeAssemblyAndReads_by_id
+        set sampleID,libraryID,file(left),file(right) from inputBwa
 
         output:
         set sampleID,file(bam) into outputBwa
@@ -204,7 +217,7 @@ process runBwa {
 	bam = sampleID + ".bam"
 
 	"""
-		$BWA index $assembly && $BWA mem -M -t 8 ${assembly} $left $right | $SAMTOOLS sort - > $bam
+		$BWA mem -M -t 8 ${REFERENCE} $left $right | $SAMTOOLS sort - > $bam
 	"""
 
 }
@@ -254,10 +267,6 @@ process runCollectMultipleMetrics {
     script:       
 
     """
-        java -XX:ParallelGCThreads=1 -Xmx5g -Djava.io.tmpdir=tmp/ -jar $PICARD CreateSequenceDictionary \
-		R=$assembly \
-		O=scaffolds.dict \
-	&& \
 	java -XX:ParallelGCThreads=1 -Xmx5g -Djava.io.tmpdir=tmp/ -jar $PICARD CollectMultipleMetrics \
 		PROGRAM=MeanQualityByCycle \
 		PROGRAM=QualityScoreDistribution \
@@ -265,8 +274,9 @@ process runCollectMultipleMetrics {
 		PROGRAM=CollectInsertSizeMetrics\
 		PROGRAM=CollectGcBiasMetrics \
 		PROGRAM=CollectBaseDistributionByCycle \
+		PROGRAM=CollectWgsMetrics \
 		INPUT=${bam} \
-		REFERENCE_SEQUENCE=scaffolds.fasta \
+		REFERENCE_SEQUENCE=$REFERENCE \
 		ASSUME_SORTED=true \
 		QUIET=true \
 		OUTPUT=${sampleID} \
@@ -299,10 +309,6 @@ process runMultiQCSample {
     """
     multiqc -n assembly_multiqc -f . 2>&1
     """
-
-
-
-
 }
 
 process runMultiQCLibrary {
