@@ -3,9 +3,9 @@
 
 ## Overview
 
-This pipeline takes PE genomic reads, performs trimming using trim_galore,  assembles draft genomes using Spades and annotates the assembly using Prokka. 
+This pipeline takes PE genomic reads, performs trimming using trim_galore,  assembles draft genomes using Spades and annotates the assembly using Dfast_core. 
 
-In addition, reads will be mapped back to the genome sequence to obtain stats about mapping rate, insert size, duplication rates, etc. 
+In addition, reads will (optionally) be mapped back to the genome sequence to obtain stats about mapping rate, insert size, duplication rates, etc. 
 
 ## Running the pipeline
 

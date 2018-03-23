@@ -13,46 +13,54 @@ try {
               "============================================================"
 }
 
+/** 
+=====================================================
+IKMB Bacteria genome assembly and annotation pipeline
+=====================================================
+
+This pipelines performs adapter trimming, assembly and automated annotation of
+bacteria-sized genomes from paired-end Illumina reads.
+
+Tools include:
+TrimGalore
+Spades
+Dfast_core
+Bwa
+Picard
+Resfinder
+
+Written by: Marc Hoeppner, m.hoeppner@ikmb.uni-kiel.de
+
+**/
+
+VERSION = "0.1"
+
+// Configurable settings
 CENTRE = params.centre
-
-PROKKA = file(params.prokka)
-
-BWA = file(params.bwa)
-
-PICARD = file(params.picard)
-
-SPADES = file(params.spades)
-
 OUTDIR = params.outdir 
-
-SAMTOOLS=file(params.samtools)
-
-TRIMGALORE=file(params.trimgalore)
-
 RESFINDER_DB=file(params.resfinder_db)
-
-REFERENCE=file(params.reference)
 
 inputFile=file(params.samples)
 
 params.saveTrimmed = true
-
 params.resfinder = false
-
 params.coverage = false
 
+// List of available resistance DBs
 resistances = [ ]
 
 RESFINDER_CONFIG = RESFINDER_DB + "/config"
 
-file(RESFINDER_CONFIG).eachLine { line ->
-	if (line =~ /^#.*/ ) {
+if (params.resfinder) {
+	file(RESFINDER_CONFIG).eachLine { line ->
+		if (line =~ /^#.*/ ) {
 
-	} else {
-		elements = line.trim().split("\t")
-		db = elements[0]
-		if ( db.length() > 0 ) {
-			resistances << db
+		} else {
+			elements = line.trim().split("\t")
+			db = elements[0]
+			if ( db.length() > 0 ) {
+				resistances << db
+			}
 		}
 	}
 }
@@ -70,7 +78,6 @@ log.info "Nextflow Version: 	$workflow.nextflow.version"
 log.info "Command Line: 	$workflow.commandLine" 
 log.info "Running Resfinder:	${params.resfinder}"
 log.info "Resfinder DB:		${RESFINDER_DB}"
-log.info "Resfinder Config: 	${RESFINDER_CONFIG}"
 log.info "=========================================" 
 
 
@@ -123,10 +130,10 @@ process runTrimgalore {
 
    script:
 
-   trim_option = '--paired'
+   trim_option = '--paired -q 1'
 
    """
-	$TRIMGALORE --gzip $trim_option --fastqc --length 75  $forward $reverse
+	trim_galore --gzip $trim_option --fastqc --length 75 $forward $reverse
    """	
 }
 
@@ -139,41 +146,39 @@ process runSpades {
   set sampleID,libraryID,file(fw),file(rev) from trimmed_reads
 
   output:
-  set sampleID,file(assembly_fa) into inputProkka,inputAssemblyMetrics
+  set sampleID,file(assembly_fa) into inputDfast,inputAssemblyMetrics
 
   script:
   assembly_fa = "spades/scaffolds.fasta"
 
   """
-	$SPADES -1 $fw -2 $rev -t ${task.cpus} -m 120 -o spades
+	spades.py -1 $fw -2 $rev -t ${task.cpus} -m ${task.memory.toGiga()} -o spades
   """
 
 }
 
-process runProkka {
-	
+process runDfast_core {
+
 	tag "${sampleID}"
-	publishDir "${OUTDIR}/${sampleID}/annotation", mode: 'copy'
+        publishDir "${OUTDIR}/${sampleID}/annotation", mode: 'copy'
 
-	input:
-	set sampleID,file(assembly_fa) from inputProkka
+        input:
+        set sampleID,file(assembly_fa) from inputDfast
 
-	output:
-	file("prokka/*") into ProkkaAnnotation
-	file(annotation_gff) into ProkkaGFF
-	file("prokka/*") into ProkkaStats
-	set val(sampleID),file(annotation_fsa) into ProkkaFSA
-
+        output:
+        file("prokka/*") into DfastAnnotation
+        file(annotation_gff) into DfastGFF
+        set val(sampleID),file(annotation_fsa) into DfastFSA
+	
 	script:
-	annotation_gff = "prokka/" + sampleID + ".gff"
-	annotation_gbk = "prokka/" + sampleID + ".gbk"
-	annotation_stats = "prokka/" + sampleID + ".txt"
-	annotation_fsa	= "prokka/" + sampleID + ".fsa"
+        annotation_gff = "dfast/" + sampleID + ".gff"
+        annotation_gbk = "dfast/" + sampleID + ".gbk"
+        annotation_stats = "dfast/" + sampleID + ".txt"
+        annotation_fsa  = "dfast/" + sampleID + ".fsa"
 
 	"""
-		$PROKKA --outdir prokka --prefix ${sampleID} --addgenes --locustag ${sampleID} --mincontiglen 200 --centre ${CENTRE} --strain ${sampleID} --cpus 16 $assembly_fa 
+		dfast --genome $assembly_fa --out dfast --minimum_length 200  --locus_tag_prefix ${sampleID} --cpu ${task.cpus} --center_name ${CENTRE}
 	"""
-
 }
 
 process runResfinder {
@@ -182,20 +187,20 @@ process runResfinder {
         publishDir "${OUTDIR}/${sampleID}/Resfinder", mode: 'copy'
 
 	input:
-	set sampleID,file(assembly) from ProkkaFSA
+	set sampleID,file(assembly) from DfastFSA
 	each resistance from resistances
 	
 	output:
 	file("resfinder_${resistance}/*") into resultsResfinder
 
-	//when:
-	//params.resfinder
+	when:
+	params.resfinder == true
 
 	script:
 	outfolder = "resfinder_${resistance}"
 
 	"""	
-		perl /ifs/data/nfs_share/ikmb_repository/software/resfinder/current/resfinder.pl -d $RESFINDER_DB -a $resistance -i $assembly -o $outfolder -k 90 -l 0.60
+		perl resfinder.pl -d $RESFINDER_DB -a $resistance -i $assembly -o $outfolder -k 90 -l 0.60
 	"""
 }
 
@@ -211,13 +216,13 @@ process runBwa {
         set sampleID,file(bam) into outputBwa
 
 	when:
-	params.coverage
+	params.coverage == true
 
 	script:
 	bam = sampleID + ".bam"
 
 	"""
-		$BWA mem -M -t 8 ${REFERENCE} $left $right | $SAMTOOLS sort - > $bam
+		bwa mem -M -t 8 ${REFERENCE} $left $right | $SAMTOOLS sort - > $bam
 	"""
 
 }
@@ -274,7 +279,6 @@ process runCollectMultipleMetrics {
 		PROGRAM=CollectInsertSizeMetrics\
 		PROGRAM=CollectGcBiasMetrics \
 		PROGRAM=CollectBaseDistributionByCycle \
-		PROGRAM=CollectWgsMetrics \
 		INPUT=${bam} \
 		REFERENCE_SEQUENCE=$REFERENCE \
 		ASSUME_SORTED=true \
@@ -284,20 +288,14 @@ process runCollectMultipleMetrics {
 	"""
 }	
 
-
 process runMultiQCSample {
 
     tag "ALL"
     publishDir "${OUTDIR}/MultiQC", mode: 'copy'
 
     input:
-  //  file (fastqc:'fastqc/*') from trimgalore_fastqc_reports.collect()
- //   file ('trimgalore/*') from trimgalore_results.collect()
     file (dedup_metrics) from runMarkDuplicatesOutput_QC.collect()
-    file ('prokka/*') from ProkkaStats.collect()
     file('*') from CollectMultipleMetricsOutput.flatten().toList()
-
-
 
     output:
     file "*assembly_multiqc.html" into multiqc_report
@@ -332,15 +330,11 @@ process runMultiQCLibrary {
 
 }
 
-
 workflow.onComplete {
   log.info "========================================="
   log.info "Duration:		$workflow.duration"
   log.info "========================================="
 }
-
-
-
 
 //#############################################################################################################
 //#############################################################################################################
