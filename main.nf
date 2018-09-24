@@ -92,7 +92,7 @@ Channel.fromPath(inputFile)
 process Merge {
 
 	tag "${libraryID}"
-        publishDir("${OUTDIR}/Data/${libraryID}")
+        // publishDir("${OUTDIR}/Data/${libraryID}")
 
         input:
 	set libraryID,sampleID,forward_reads,reverse_reads from inputMerge
@@ -137,7 +137,7 @@ process runTrimgalore {
    """	
 }
 
-process runSpades {
+process runShovill {
 
   tag "${sampleID}|${libraryID}"
   publishDir "${OUTDIR}/${sampleID}/assembly", mode: 'copy'
@@ -149,10 +149,10 @@ process runSpades {
   set sampleID,file(assembly_fa) into inputDfast,inputAssemblyMetrics
 
   script:
-  assembly_fa = "spades/scaffolds.fasta"
+  assembly_fa = "shovill/contigs.fa"
 
   """
-	spades.py -1 $fw -2 $rev -t ${task.cpus} -m ${task.memory.toGiga()} -o spades
+	shovill -R1 $fw -R2 $rev --cpus ${task.cpus} --ram ${task.memory.toGiga()} --outdir shovill
   """
 
 }
@@ -166,15 +166,15 @@ process runDfast_core {
         set sampleID,file(assembly_fa) from inputDfast
 
         output:
-        file("prokka/*") into DfastAnnotation
+        file("dfast/*") into DfastAnnotation
         file(annotation_gff) into DfastGFF
         set val(sampleID),file(annotation_fsa) into DfastFSA
 	
 	script:
-        annotation_gff = "dfast/" + sampleID + ".gff"
-        annotation_gbk = "dfast/" + sampleID + ".gbk"
-        annotation_stats = "dfast/" + sampleID + ".txt"
-        annotation_fsa  = "dfast/" + sampleID + ".fsa"
+        annotation_gff = "dfast/genome.gff"
+        annotation_gbk = "dfast/genome.gbk"
+        annotation_stats = "dfast/statistics.txt"
+        annotation_fsa  = "dfast/genome.fna"
 
 	"""
 		dfast --genome $assembly_fa --out dfast --minimum_length 200  --locus_tag_prefix ${sampleID} --cpu ${task.cpus} --center_name ${CENTRE}
