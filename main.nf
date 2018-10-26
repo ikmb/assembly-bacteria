@@ -42,7 +42,7 @@ RESFINDER_DB=file(params.resfinder_db)
 
 inputFile=file(params.samples)
 
-params.saveTrimmed = true
+params.saveTrimmed = false
 params.resfinder = false
 params.coverage = false
 
