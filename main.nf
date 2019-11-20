@@ -12,6 +12,25 @@ Written by: Marc Hoeppner, m.hoeppner@ikmb.uni-kiel.de
 
 **/
 
+// Help message
+helpMessage = """
+===============================================================================
+IKMB Diagnostic Exome pipeline | version ${params.version}
+===============================================================================
+Usage: nextflow -c /path/to/git/nextflow.config run /path/to/git/main.nf --assembly hg19_clinical --kit Nextera --samples Samples.csv
+This example will perform an exome analysis against the hg19 (with decoys) assembly, assuming that exome reads were generated with
+the Nextera kit and using the GATK4 best-practice workflow.
+Required parameters:
+--samples                      A sample list in CSV format (see website for formatting hints)
+Optional parameters:
+--email                        Email address to send reports to (enclosed in '')
+--skip_multiqc                 Don't attached MultiQC report to the email.
+Output:
+--outdir                       Local directory to which all output is written (default: results)
+"""
+
+params.help = false
+
 // Configurable settings
 CENTRE = params.centre
 OUTDIR = params.outdir 
@@ -19,43 +38,46 @@ OUTDIR = params.outdir
 inputFile=file(params.samples)
 
 // Header log info 
-
 log.info "=========================================" 
-log.info "IKMB pipeline version v${VERSION}" 
+log.info "IKMB pipeline version v${workflow.manifest.version}" 
 log.info "Nextflow Version: 	$workflow.nextflow.version" 
 log.info "Command Line: 	$workflow.commandLine" 
-log.info "Running Resfinder:	${params.resfinder}"
-log.info "Resfinder DB:		${RESFINDER_DB}"
 log.info "=========================================" 
 
 
 // Starting the workflow
 
-Channel.fromPath(inputFile)
-	.splitCsv(sep: ';', skip:1 )
-	.map { sampleID, libraryID, R1, R2 -> [ libraryID, sampleID, file(R1), file(R2) ] }
-	.groupTuple(by: [0,1])
-       	.set { inputMerge }
+Channel.fromFilePairs(params.reads, flat: true )
+	.ifEmpty { exit 1, "Did not find any reads matching our argument --reads" }
+	.set { reads }
+
+inputMerge = reads.groupTuple()
 
 process Merge {
 
-	tag "${libraryID}"
-        // publishDir("${OUTDIR}/Data/${libraryID}")
-
         input:
-	set libraryID,sampleID,forward_reads,reverse_reads from inputMerge
+	set libraryID,file(forward_reads),file(reverse_reads) from inputMerge
 
         output:
-        set sampleID,libraryID,file(left_merged),file(right_merged) into inputTrimgalore
+        set libraryID,file(left_merged),file(right_merged) into inputFastp
 
         script:
         left_merged = libraryID + "_R1.fastq.gz"
         right_merged = libraryID + "_R2.fastq.gz"
 
-        """
-                zcat ${forward_reads.join(" ")} | gzip > $left_merged
-		zcat ${reverse_reads.join(" ")} | gzip > $right_merged
-        """
+	if (forward_reads.size() > 1 && forward_reads.size() < 1000) {
+
+	        """
+        	        zcat ${forward_reads.join(" ")} | gzip > $left_merged
+			zcat ${reverse_reads.join(" ")} | gzip > $right_merged
+	        """
+	} else {
+
+		"""
+			cp $forward_reads $left_merged
+			cp $reverse_reads $right_merged
+		"""
+	}
 }
 
 process runFastp {
@@ -63,10 +85,10 @@ process runFastp {
 	publishDir "${OUTDIR}/fastp", mode: 'copy'
 
 	input:
-	set sampleID,libraryID,file(forward),file(reverse) from inputFastp
+	set libraryID,file(forward),file(reverse) from inputFastp
 
 	output:
-	set sampleID,libraryID,file(foward_trimmed),file(reverse_trimmed) into trimmed_reads,inputBwa
+	set libraryID,file(forward_trimmed),file(reverse_trimmed) into trimmed_reads
 	set file(json),file(html) into qc_reports
 
 	script:
@@ -85,10 +107,10 @@ process runShovill {
   publishDir "${OUTDIR}/${sampleID}/assembly", mode: 'copy'
   
   input:
-  set sampleID,libraryID,file(fw),file(rev) from trimmed_reads
+  set libraryID,file(fw),file(rev) from trimmed_reads
 
   output:
-  set sampleID,file(assembly_fa) into inputDfast,inputAssemblyMetrics
+  set file(assembly_fa) into inputDfast,inputAssemblyMetrics
 
   script:
   assembly_fa = "shovill/contigs.fa"
