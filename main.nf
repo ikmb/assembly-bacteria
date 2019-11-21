@@ -15,13 +15,12 @@ Written by: Marc Hoeppner, m.hoeppner@ikmb.uni-kiel.de
 // Help message
 helpMessage = """
 ===============================================================================
-IKMB Diagnostic Exome pipeline | version ${params.version}
+IKMB Bacteria assembly and annotation pipeline | version ${workflow.manifest.version}
 ===============================================================================
-Usage: nextflow -c /path/to/git/nextflow.config run /path/to/git/main.nf --assembly hg19_clinical --kit Nextera --samples Samples.csv
-This example will perform an exome analysis against the hg19 (with decoys) assembly, assuming that exome reads were generated with
-the Nextera kit and using the GATK4 best-practice workflow.
+Usage: nextflow run ikmb/assembly-bacteria --reads '*_R{1,2}_001.fastq.gz' --email 'you@somehwere.com'
+
 Required parameters:
---samples                      A sample list in CSV format (see website for formatting hints)
+--reads                        Regexp to define input files (must be paired-end Illumina reads)
 Optional parameters:
 --email                        Email address to send reports to (enclosed in '')
 --skip_multiqc                 Don't attached MultiQC report to the email.
@@ -35,7 +34,6 @@ params.help = false
 CENTRE = params.centre
 OUTDIR = params.outdir 
 
-inputFile=file(params.samples)
 
 // Header log info 
 log.info "=========================================" 
@@ -48,7 +46,7 @@ log.info "========================================="
 // Starting the workflow
 
 Channel.fromFilePairs(params.reads, flat: true )
-	.ifEmpty { exit 1, "Did not find any reads matching our argument --reads" }
+	.ifEmpty { exit 1, "Did not find any reads matching your argument --reads" }
 	.set { reads }
 
 inputMerge = reads.groupTuple()
@@ -94,8 +92,8 @@ process runFastp {
 	script:
 	forward_trimmed = forward.getSimpleName() + "_trimmed.fastq.gz"
 	reverse_trimmed = reverse.getSimpleName() + "_trimmed.fastq.gz"
-	json = sampleID + "-" + libraryID + "fastp.json"
-	html = sampleID + "-" + libraryID + "fastp.html"
+	json =  libraryID + "fastp.json"
+	html =  libraryID + "fastp.html"
 	
 	"""
 		fastp --in1 $forward --in2 $reverse --out1 $forward_trimmed --out2 $reverse_trimmed --detect_adapter_for_pe -w ${task.cpus} -j $json -h $html --length_required 35
@@ -104,13 +102,13 @@ process runFastp {
 
 process runShovill {
 
-  publishDir "${OUTDIR}/${sampleID}/assembly", mode: 'copy'
+  publishDir "${OUTDIR}/${libraryID}/assembly", mode: 'copy'
   
   input:
   set libraryID,file(fw),file(rev) from trimmed_reads
 
   output:
-  set file(assembly_fa) into inputDfast,inputAssemblyMetrics
+  set libraryID,file(assembly_fa) into inputDfast,inputAssemblyMetrics
 
   script:
   assembly_fa = "shovill/contigs.fa"
@@ -123,10 +121,10 @@ process runShovill {
 
 process runDfast_core {
 
-        publishDir "${OUTDIR}/${sampleID}/annotation", mode: 'copy'
+        publishDir "${OUTDIR}/${libraryID}/annotation", mode: 'copy'
 
         input:
-        set sampleID,file(assembly_fa) from inputDfast
+        set libraryID,file(assembly_fa) from inputDfast
 
         output:
         file("dfast/*") into DfastAnnotation
@@ -140,7 +138,7 @@ process runDfast_core {
         annotation_fsa  = "dfast/genome.fna"
 
 	"""
-		dfast --genome $assembly_fa --out dfast --minimum_length 200  --locus_tag_prefix ${sampleID} --cpu ${task.cpus} --center_name ${CENTRE}
+		dfast --genome $assembly_fa --out dfast --minimum_length 200  --locus_tag_prefix ${libraryID} --cpu ${task.cpus} --center_name ${CENTRE}
 	"""
 }
 
@@ -168,28 +166,5 @@ workflow.onComplete {
   log.info "========================================="
   log.info "Duration:		$workflow.duration"
   log.info "========================================="
-}
-
-//#############################################################################################################
-//#############################################################################################################
-//
-// FUNCTIONS
-//
-//#############################################################################################################
-//#############################################################################################################
-
-
-// ------------------------------------------------------------------------------------------------------------
-//
-// Read input file and save it into list of lists
-//
-// ------------------------------------------------------------------------------------------------------------
-def logParams(p, n) {
-  File file = new File(n)
-  file.write "Parameter:\tValue\n"
-
-  for(s in p) {
-     file << "${s.key}:\t${s.value}\n"
-  }
 }
 
