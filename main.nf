@@ -86,7 +86,7 @@ process runFastp {
 	set libraryID,file(forward),file(reverse) from inputFastp
 
 	output:
-	set libraryID,file(forward_trimmed),file(reverse_trimmed) into trimmed_reads,trimmed_reads_uni
+	set libraryID,file(forward_trimmed),file(reverse_trimmed) into trimmed_reads
 	set file(json),file(html) into qc_reports
 
 	script:
@@ -105,10 +105,10 @@ process runUnicycler {
     publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
 
     input:
-    set libraryID, file(fq1), file(fq2) from unicycler_ch
+    set libraryID, file(fq1), file(fq2) from trimmed_reads
 
     output:
-    set libraryID, file("${libraryID}_assembly.fasta") into inputDfast,quast_ch
+    set libraryID, file("${libraryID}_assembly.fasta") into inputDfast
     set libraryID, file("${libraryIDd}_assembly.gfa") into bandage_ch
     file("${libaryID}_assembly.gfa")
     file("${libraryID}_assembly.png")
@@ -116,6 +116,7 @@ process runUnicycler {
     
     script:
     """
+
     unicycler -1 $fq1 -2 $fq2 --threads ${task.cpus} ${params.unicycler_args} --keep 0 -o .
     mv unicycler.log ${libraryID}_unicycler.log
     # rename so that quast can use the name 
@@ -125,23 +126,6 @@ process runUnicycler {
     """
 }
 
-process runQuast {
-
-  publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
-  
-  input:
-  set libraryID, fasta from quast_ch
-  
-  output:
-  // multiqc only detects a file called report.tsv. to avoid
-  // name clash with other samples we need a directory named by sample
-  file("${libraryID}_assembly_QC/") into quast_logs_ch
-
-  script:
-  """
-  quast.py -t ${task.cpus} -o ${libraryID}_assembly_QC ${fasta} 
-  """
-}
 
 process runDfast_core {
 

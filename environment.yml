@@ -10,6 +10,5 @@ dependencies:
   - multiqc=1.7
   - dfast=1.2.5
   - unicycler=0.4.7
-  - quast=5.0.2
   - bandage=0.8.1
 
