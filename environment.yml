@@ -10,3 +10,5 @@ dependencies:
   - multiqc=1.7
   - shovill=1.0.9
   - dfast=1.2.5
+  - unicycler=0.4.7
+  - quast=5.0.2

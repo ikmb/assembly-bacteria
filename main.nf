@@ -86,37 +86,61 @@ process runFastp {
 	set libraryID,file(forward),file(reverse) from inputFastp
 
 	output:
-	set libraryID,file(forward_trimmed),file(reverse_trimmed) into trimmed_reads
+	set libraryID,file(forward_trimmed),file(reverse_trimmed) into trimmed_reads,trimmed_reads_uni
 	set file(json),file(html) into qc_reports
 
 	script:
 	forward_trimmed = forward.getSimpleName() + "_trimmed.fastq.gz"
 	reverse_trimmed = reverse.getSimpleName() + "_trimmed.fastq.gz"
-	json =  libraryID + "fastp.json"
-	html =  libraryID + "fastp.html"
+	json =  libraryID + ".fastp.json"
+	html =  libraryID + ".fastp.html"
 	
 	"""
 		fastp --in1 $forward --in2 $reverse --out1 $forward_trimmed --out2 $reverse_trimmed --detect_adapter_for_pe -w ${task.cpus} -j $json -h $html --length_required 35
 	"""
 }
 
-process runShovill {
+process runUnicycler {
 
-  publishDir "${OUTDIR}/${libraryID}/assembly", mode: 'copy'
+    publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
+
+    input:
+    set libraryID, file(fq1), file(fq2) from unicycler_ch
+
+    output:
+    set libraryID, file("${libraryID}_assembly.fasta") into inputDfast,quast_ch
+    set libraryID, file("${libraryIDd}_assembly.gfa") into bandage_ch
+    file("${libaryID}_assembly.gfa")
+    file("${libraryID}_assembly.png")
+    file("${library}_unicycler.log")
+    
+    script:
+    """
+    unicycler -1 $fq1 -2 $fq2 --threads ${task.cpus} ${params.unicycler_args} --keep 0 -o .
+    mv unicycler.log ${libraryID}_unicycler.log
+    # rename so that quast can use the name 
+    mv assembly.gfa ${libraryID}_assembly.gfa
+    mv assembly.fasta ${libraryID}_assembly.fasta
+    Bandage image ${libraryID}_assembly.gfa ${libraryID}_assembly.png
+    """
+}
+
+process quast {
+
+  publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
   
   input:
-  set libraryID,file(fw),file(rev) from trimmed_reads
-
+  set libraryID, fasta from quast_ch
+  
   output:
-  set libraryID,file(assembly_fa) into inputDfast,inputAssemblyMetrics
+  // multiqc only detects a file called report.tsv. to avoid
+  // name clash with other samples we need a directory named by sample
+  file("${libraryID}_assembly_QC/") into quast_logs_ch
 
   script:
-  assembly_fa = "shovill/contigs.fa"
-
   """
-	shovill -R1 $fw -R2 $rev --cpus ${task.cpus} --ram ${task.memory.toGiga()} --outdir shovill
+  quast.py -t ${task.cpus} -o ${libraryID}_assembly_QC ${fasta} 
   """
-
 }
 
 process runDfast_core {
@@ -129,7 +153,7 @@ process runDfast_core {
         output:
         file("dfast/*") into DfastAnnotation
         file(annotation_gff) into DfastGFF
-        set val(sampleID),file(annotation_fsa) into DfastFSA
+        set val(libraryID),file(annotation_fsa) into DfastFSA
 	
 	script:
         annotation_gff = "dfast/genome.gff"
@@ -156,7 +180,6 @@ process runMultiQCLibrary {
     script:
     
     """
-      cp $baseDir/config/multiqc.yaml multiqc_config.yaml
       multiqc -n library_multiqc -f . 2>&1
     """	
 
