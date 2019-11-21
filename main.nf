@@ -125,7 +125,7 @@ process runUnicycler {
     """
 }
 
-process quast {
+process runQuast {
 
   publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
   

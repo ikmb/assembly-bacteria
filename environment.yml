@@ -8,7 +8,8 @@ channels:
 dependencies:
   - fastp=0.20.0
   - multiqc=1.7
-  - shovill=1.0.9
   - dfast=1.2.5
   - unicycler=0.4.7
   - quast=5.0.2
+  - bandage=0.8.1
+
