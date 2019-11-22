@@ -53,7 +53,7 @@ inputMerge = reads.groupTuple()
 
 process Merge {
 
-	label 'default'
+	label 'assembly'
         input:
 	set libraryID,file(forward_reads),file(reverse_reads) from inputMerge
 
@@ -80,7 +80,7 @@ process Merge {
 }
 
 process runFastp {
-	label 'default'
+	label 'assembly'
 
 	publishDir "${OUTDIR}/fastp", mode: 'copy'
 
@@ -103,23 +103,23 @@ process runFastp {
 }
 
 process runUnicycler {
-    label 'default'
+	label 'assembly'
 
-    publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
+	publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
 
-    input:
-    set libraryID, file(fq1), file(fq2) from trimmed_reads
+	input:
+	set libraryID, file(fq1), file(fq2) from trimmed_reads
 
-    output:
-    set libraryID, file("${libraryID}_assembly.fasta") into inputDfast,quast_ch
-    set libraryID, file("${libraryIDd}_assembly.gfa") into bandage_ch
-    file("${libaryID}_assembly.gfa")
-    file("${libraryID}_assembly.png")
-    file("${library}_unicycler.log")
+	output:
+	set libraryID, file("${libraryID}_assembly.fasta") into inputDfast,quast_ch
+	set libraryID, file("${libraryIDd}_assembly.gfa") into bandage_ch
+	file("${libaryID}_assembly.gfa")
+	file("${libraryID}_assembly.png")
+	file("${library}_unicycler.log")
 
-    // Stolen from Alex Pelzer, nf-core/bacass
-    script:
-    """
+	// Stolen from Alex Pelzer, nf-core/bacass
+	script:
+	"""
 
 	    unicycler -1 $fq1 -2 $fq2 --threads ${task.cpus} ${params.unicycler_args} --keep 0 -o .
 	    mv unicycler.log ${libraryID}_unicycler.log
@@ -127,11 +127,13 @@ process runUnicycler {
 	    mv assembly.gfa ${libraryID}_assembly.gfa
 	    mv assembly.fasta ${libraryID}_assembly.fasta
 	    Bandage image ${libraryID}_assembly.gfa ${libraryID}_assembly.png
-    """
+	"""
 }
 
 process runQuast {
-	label 'default'
+	
+	label 'assembly'
+	
 	publishDir "${params.outdir}/${libraryIDid}/", mode: 'copy'
   
 	input:
@@ -174,7 +176,7 @@ process runDfast_core {
 
 process runMultiQCLibrary {
 
-	label 'default'
+	label 'assembly'
 
 	publishDir "${OUTDIR}/MultiQC", mode: 'copy'
 

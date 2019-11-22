@@ -4,6 +4,6 @@ LABEL authors="Marc Hoeppner" \
 
 COPY environment.yml /
 RUN conda env create -f /environment.yml && conda clean -a
-
+RUN apt-get install -y libgl1-mesa-glx && apt-get clean -y
 ENV PATH /opt/conda/envs/assembly-bacteria-1.0/bin:$PATH
 
