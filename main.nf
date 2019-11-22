@@ -53,6 +53,7 @@ inputMerge = reads.groupTuple()
 
 process Merge {
 
+	label 'default'
         input:
 	set libraryID,file(forward_reads),file(reverse_reads) from inputMerge
 
@@ -79,7 +80,8 @@ process Merge {
 }
 
 process runFastp {
-	
+	label 'default'
+
 	publishDir "${OUTDIR}/fastp", mode: 'copy'
 
 	input:
@@ -101,6 +103,7 @@ process runFastp {
 }
 
 process runUnicycler {
+    label 'default'
 
     publishDir "${OUTDIR}/${libraryID}/", mode: 'copy'
 
@@ -108,26 +111,45 @@ process runUnicycler {
     set libraryID, file(fq1), file(fq2) from trimmed_reads
 
     output:
-    set libraryID, file("${libraryID}_assembly.fasta") into inputDfast
+    set libraryID, file("${libraryID}_assembly.fasta") into inputDfast,quast_ch
     set libraryID, file("${libraryIDd}_assembly.gfa") into bandage_ch
     file("${libaryID}_assembly.gfa")
     file("${libraryID}_assembly.png")
     file("${library}_unicycler.log")
-    
+
+    // Stolen from Alex Pelzer, nf-core/bacass
     script:
     """
 
-    unicycler -1 $fq1 -2 $fq2 --threads ${task.cpus} ${params.unicycler_args} --keep 0 -o .
-    mv unicycler.log ${libraryID}_unicycler.log
-    # rename so that quast can use the name 
-    mv assembly.gfa ${libraryID}_assembly.gfa
-    mv assembly.fasta ${libraryID}_assembly.fasta
-    Bandage image ${libraryID}_assembly.gfa ${libraryID}_assembly.png
+	    unicycler -1 $fq1 -2 $fq2 --threads ${task.cpus} ${params.unicycler_args} --keep 0 -o .
+	    mv unicycler.log ${libraryID}_unicycler.log
+	    # rename so that quast can use the name 
+	    mv assembly.gfa ${libraryID}_assembly.gfa
+	    mv assembly.fasta ${libraryID}_assembly.fasta
+	    Bandage image ${libraryID}_assembly.gfa ${libraryID}_assembly.png
     """
 }
 
+process runQuast {
+	label 'default'
+	publishDir "${params.outdir}/${libraryIDid}/", mode: 'copy'
+  
+	input:
+	set libraryID, fasta from quast_ch
+  
+	output:
+	// multiqc only detects a file called report.tsv. to avoid
+	// name clash with other samples we need a directory named by sample
+	file("${libraryID}_assembly_QC/") into quast_logs_ch
 
+	script:
+	"""
+		quast.py -t ${task.cpus} -o ${libraryID}_assembly_QC ${fasta}
+	"""
+}
 process runDfast_core {
+
+	label 'dfast'
 
         publishDir "${OUTDIR}/${libraryID}/annotation", mode: 'copy'
 
@@ -152,20 +174,22 @@ process runDfast_core {
 
 process runMultiQCLibrary {
 
-    tag "ALL"
-    publishDir "${OUTDIR}/MultiQC", mode: 'copy'
+	label 'default'
 
-    input:
-    file ('*')  from qc_reports.collect()
+	publishDir "${OUTDIR}/MultiQC", mode: 'copy'
 
-    output:
-    file "*library_multiqc.html" into multiqc_library_report
+	input:
+	file ('*')  from qc_reports.collect()
+	file quast_logs from quast_logs_ch.collect().ifEmpty([])
 
-    script:
+	output:
+	file "*library_multiqc.html" into multiqc_library_report
+
+	script:
     
-    """
-      multiqc -n library_multiqc -f . 2>&1
-    """	
+	"""
+		multiqc -n library_multiqc -f . 2>&1
+	"""	
 
 }
 
