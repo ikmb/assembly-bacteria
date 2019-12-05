@@ -112,10 +112,10 @@ process runUnicycler {
 
 	output:
 	set libraryID, file("${libraryID}_assembly.fasta") into inputDfast,quast_ch
-	set libraryID, file("${libraryIDd}_assembly.gfa") into bandage_ch
-	file("${libaryID}_assembly.gfa")
+	set libraryID, file("${libraryID}_assembly.gfa") into bandage_ch
+	file("${libraryID}_assembly.gfa")
 	file("${libraryID}_assembly.png")
-	file("${library}_unicycler.log")
+	//file("${library}_unicycler.log")
 
 	// Stolen from Alex Pelzer, nf-core/bacass
 	script:
@@ -123,10 +123,10 @@ process runUnicycler {
 
 	    unicycler -1 $fq1 -2 $fq2 --threads ${task.cpus} ${params.unicycler_args} --keep 0 -o .
 	    mv unicycler.log ${libraryID}_unicycler.log
-	    # rename so that quast can use the name 
 	    mv assembly.gfa ${libraryID}_assembly.gfa
 	    mv assembly.fasta ${libraryID}_assembly.fasta
 	    Bandage image ${libraryID}_assembly.gfa ${libraryID}_assembly.png
+
 	"""
 }
 
@@ -134,7 +134,7 @@ process runQuast {
 	
 	label 'assembly'
 	
-	publishDir "${params.outdir}/${libraryIDid}/", mode: 'copy'
+	publishDir "${params.outdir}/${libraryID}/", mode: 'copy'
   
 	input:
 	set libraryID, fasta from quast_ch
